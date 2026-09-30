@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OxyFat Pro: Advanced Kinetics v19.0</title>
+    
+    <link rel="stylesheet" href="https://pyscript.net/releases/2024.1.1/core.css">
+    <script type="module" src="https://pyscript.net/releases/2024.1.1/core.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f2f5; color: #212529; padding: 20px; }
+        .app-container { max-width: 1700px; margin: auto; }
+        .card { background: white; border-radius: 12px; box-shadow: 0 6px 20px rgba(0,0,0,0.05); padding: 25px; margin-bottom: 20px; border: none; }
+        .header-title { color: #d63384; font-weight: 900; margin-bottom: 5px; letter-spacing: -1px; font-size: 2.5rem; }
+        .header-title span { color: #0dcaf0; }
+        .header-subtitle { color: #6c757d; font-size: 1.1rem; margin-bottom: 20px; font-weight: 500; }
+        .config-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; align-items: end; }
+        .btn-run { background: #212529; color: white; font-weight: bold; padding: 10px 25px; border-radius: 8px; width: 100%; font-size: 1.1rem; transition: 0.3s; cursor: pointer; border: none; }
+        .btn-run:hover { background: #495057; color: white; }
+        .btn-export { background: #198754; color: white; font-weight: bold; padding: 8px 20px; border-radius: 8px; border: none; transition: 0.3s; font-size: 0.95rem; cursor: pointer; text-decoration: none; }
+        .btn-export:hover { background: #146c43; color: white; }
+        .loader { display: none; margin-top: 15px; font-weight: bold; color: #d63384; text-align: center; }
+        .table-responsive { max-height: 600px; overflow-y: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.8rem; white-space: nowrap; }
+        th { background: #f8f9fa; position: sticky; top: 0; z-index: 10; border-bottom: 2px solid #dee2e6; padding: 10px; text-align: center; color: #495057; font-size: 0.75rem;}
+        td { border: 1px solid #dee2e6; padding: 8px; text-align: center; font-size: 0.75rem;}
+        .plot-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 20px; margin-top: 20px; }
+        .plot-card { background: white; border: 1px solid #e9ecef; border-radius: 8px; padding: 10px; text-align: center; position: relative; }
+        .plot-card img { max-width: 100%; height: auto; border-radius: 4px; }
+        .poor-fit-row { background-color: #fff3cd !important; color: #856404; font-weight: bold; }
+    </style>
+
+    <py-config>
+        packages = ["pandas", "numpy", "scipy", "statsmodels", "matplotlib"]
+    </py-config>
+</head>
+<body>
+
+<div class="app-container">
+    <div class="card text-center">
+        <h1 class="header-title">Oxy<span>Fat</span> Pro v19.0</h1>
+        <p class="header-subtitle">Curve-to-Curve Thresholding | 500-Point Causality Sync | Hyper-Clean Graphing</p>
+    </div>
+
+    <div class="card">
+        <h5 class="mb-3">1. Upload Datasets & Configure Protocol</h5>
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label" style="color: #d63384; font-weight: bold;">Upload Fat Oxidation (CSV)</label>
+                <input class="form-control" type="file" id="fat_file" accept=".csv">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label" style="color: #0dcaf0; font-weight: bold;">Upload SmO2 Data (CSV)</label>
+                <input class="form-control" type="file" id="smo2_file" accept=".csv">
+            </div>
+        </div>
+        
+        <hr class="my-4">
+        
+        <div class="config-grid">
+            <div>
+                <label class="form-label">Start Speed / Wattage</label>
+                <input type="number" id="start_speed" class="form-control" value="4" step="0.1">
+            </div>
+            <div>
+                <label class="form-label">Increment per Stage</label>
+                <input type="number" id="increment" class="form-control" value="1" step="0.1">
+            </div>
+            <div>
+                <label class="form-label">Stage Duration (Seconds)</label>
+                <input type="number" id="stage_duration" class="form-control" value="180" step="1">
+            </div>
+            <div>
+                <label class="form-label">Group Graph Subjects</label>
+                <input type="text" id="group_subjects" class="form-control" placeholder="Blank for All (e.g. SS01, SS02)">
+            </div>
+            <div class="d-flex flex-column justify-content-end">
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" id="hide_raw_data">
+                    <label class="form-check-label" for="hide_raw_data" style="font-weight: 500; font-size: 0.9rem;">
+                        Hide All Points (Show Curves Only)
+                    </label>
+                </div>
+                <button id="btn_run" class="btn-run">Run Iterative Robust Pipeline</button>
+            </div>
+        </div>
+        <div id="loader" class="loader">⚙️ Running 2-Pass Stage Pruning, 500-Point Curve-to-Curve Models & Thresholds... (~60s)</div>
+    </div>
+
+    <div id="results_container" style="display: none;">
+        <div class="card">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0">2. Morphological Analytics & Sync Statistics</h5>
+                <a id="btn_csv_export" class="btn-export">📥 Download Data (CSV)</a>
+            </div>
+            <div class="table-responsive">
+                <table id="results_table" class="table table-hover">
+                    </table>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5>3. Cohort Summary (Load-Based X-Axis)</h5>
+                <button onclick="downloadGrouped()" class="btn-export">📸 Save Grouped Graph</button>
+            </div>
+            <div id="group_plot_container" style="margin-bottom: 30px; padding: 10px; background: white;"></div>
+            
+            <hr>
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0">4. Individual Profiles (Time-Based X-Axis)</h5>
+                <button onclick="downloadIndividuals()" class="btn-export">📸 Save All Individual Graphs</button>
+            </div>
+            <div class="plot-grid" id="plots_container" style="padding: 10px; background: white;">
+                </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function downloadGrouped() {
+        const el = document.getElementById('group_plot_container');
+        html2canvas(el, { scale: 2, backgroundColor: "#ffffff" }).then(canvas => {
+            const a = document.createElement('a');
+            a.href = canvas.toDataURL("image/png");
+            a.download = "OxyFat_Grouped_Kinetics.png";
+            a.click();
+        });
+    }
+
+    function downloadIndividuals() {
+        const el = document.getElementById('plots_container');
+        html2canvas(el, { scale: 1.5, backgroundColor: "#ffffff" }).then(canvas => {
+            const a = document.createElement('a');
+            a.href = canvas.toDataURL("image/png");
+            a.download = "OxyFat_Individual_Kinetics.png";
+            a.click();
+        });
+    }
+</script>
+
+<script type="py">
+import asyncio
+import js
+from pyodide.ffi import create_proxy
+import pandas as pd
+import numpy as np
+from scipy.optimize import curve_fit
+from scipy.stats import norm, skew, kurtosis, pearsonr
+import statsmodels.api as sm
+from statsmodels.tsa.stattools import grangercausalitytests
+import matplotlib.pyplot as plt
+import io, base64
+import warnings
+warnings.filterwarnings('ignore')
+
+def time_to_speed(time_sec, start_s, inc_s, duration_s):
+    stages = time_sec / duration_s
+    return start_s + (stages * inc_s)
+
+def speed_to_time(speed_val, start_s, inc_s, duration_s):
+    return (speed_val - start_s) * duration_s / inc_s
+
+def piecewise_3seg(x, x1, x2, y0, k1, k2, k3):
+    cond1 = x < x1
+    cond2 = (x >= x1) & (x < x2)
+    cond3 = x >= x2
+    y = np.zeros_like(x, dtype=float)
+    y[cond1] = y0 + k1 * x[cond1]
+    y[cond2] = y0 + k1 * x1 + k2 * (x[cond2] - x1)
+    y[cond3] = y0 + k1 * x1 + k2 * (x2 - x1) + k3 * (x[cond3] - x2)
+    return y
+
+def compute_fit_metrics(y_true, y_pred, k_params=4):
+    n = len(y_true)
+    if n <= k_params: return 0, np.nan, np.nan
+    
+    sse = np.sum((y_true - y_pred)**2)
+    sst = np.sum((y_true - np.mean(y_true))**2)
+    r2 = 1 - (sse / sst) if sst != 0 else 0
+    adj_r2 = 1 - (1 - r2) * (n - 1) / (n - k_params)
+    aic = n * np.log(sse / n) + 2 * k_params if sse > 0 else np.nan
+    
+    residuals = y_true - y_pred
+    med = np.median(residuals)
+    signs = np.sign(residuals - med)
+    signs = signs[signs != 0]
+    runs = 1 + np.sum(signs[1:] != signs[:-1])
+    n1 = np.sum(signs > 0)
+    n2 = np.sum(signs < 0)
+    
+    if n1 > 0 and n2 > 0:
+        expected_runs = 1 + (2 * n1 * n2) / (n1 + n2)
+        var_runs = (2 * n1 * n2 * (2 * n1 * n2 - n1 - n2)) / ((n1 + n2)**2 * (n1 + n2 - 1))
+        z = (runs - expected_runs) / np.sqrt(var_runs) if var_runs > 0 else 0
+        p_runs = 2 * (1 - norm.cdf(abs(z)))
+    else:
+        p_runs = np.nan
+        
+    return adj_r2, aic, p_runs
+
+def robust_polyfit_sm(x, y, deg):
+    try:
+        X = np.vander(x, deg + 1)
+        rlm_model = sm.RLM(y, X, M=sm.robust.norms.HuberT())
+        rlm_results = rlm_model.fit()
+        return rlm_results.params
+    except:
+        return np.polyfit(x, y, deg)
+
+def advanced_artifact_filter(df, time_col, stage_duration, metric_type='fat'):
+    df_clean = df.copy()
+    df_outliers = pd.DataFrame(index=df.index, columns=df.columns)
+    df_outliers[time_col] = df[time_col]
+    outlier_counts = {}
+    
+    for col in df_clean.columns:
+        if col != time_col:
+            s_orig = df_clean[col].copy()
+            s = s_orig.dropna()
+            
+            if len(s) > 5:
+                if metric_type == 'fat':
+                    s[(s < 0) | (s > 2.5)] = np.nan
+                else:
+                    s[(s < 0) | (s > 100)] = np.nan
+                    diffs = s.diff().abs()
+                    s[diffs > 15.0] = np.nan
+
+                s = s.dropna()
+                
+                if len(s) > 5:
+                    s_time = pd.Series(s.values, index=pd.to_timedelta(df[time_col].loc[s.index], unit='s'))
+                    window_str = f'{int(stage_duration)}s'
+                    
+                    rolling_median = s_time.rolling(window=window_str, center=True, min_periods=1).median()
+                    rolling_mad = s_time.rolling(window=window_str, center=True, min_periods=1).apply(lambda x: np.median(np.abs(x - np.median(x))), raw=True)
+                    
+                    lower_bound = (rolling_median - (3 * 1.4826 * rolling_mad)).values
+                    upper_bound = (rolling_median + (3 * 1.4826 * rolling_mad)).values
+                    
+                    outliers = (s.values < lower_bound) | (s.values > upper_bound)
+                    s.iloc[outliers] = np.nan
+
+                s_aligned = pd.Series(index=s_orig.index, dtype=float)
+                s_aligned.loc[s.index] = s
+                
+                is_dropped = s_orig.notna() & s_aligned.isna()
+                df_outliers[col] = s_orig[is_dropped]
+                
+                dropped_count = is_dropped.sum()
+                outlier_counts[col] = dropped_count
+
+                df_clean[col] = s_aligned
+            else:
+                outlier_counts[col] = 0
+                
+    return df_clean, outlier_counts, df_outliers
+
+def smooth_curve_5s(t, y):
+    s = pd.Series(y, index=pd.to_timedelta(t, unit='s'))
+    smoothed = s.rolling('5s', min_periods=1).mean().values
+    return smoothed
+
+async def run_analysis(event):
+    js.document.getElementById("loader").style.display = "block"
+    js.document.getElementById("results_container").style.display = "none"
+    js.document.getElementById("plots_container").innerHTML = ""
+    js.document.getElementById("group_plot_container").innerHTML = ""
+    
+    hide_raw = js.document.getElementById("hide_raw_data").checked
+    
+    group_subjs_raw = js.document.getElementById("group_subjects").value.strip()
+    group_subjs_list = [s.strip() for s in group_subjs_raw.split(',')] if group_subjs_raw else []
+    
+    fat_file_list = js.document.getElementById("fat_file").files
+    smo2_file_list = js.document.getElementById("smo2_file").files
+    
+    if fat_file_list.length == 0 or smo2_file_list.length == 0:
+        js.alert("Please upload BOTH the Fat Oxidation and SmO2 CSV files.")
+        js.document.getElementById("loader").style.display = "none"
+        return
+        
+    try:
+        fat_text = await fat_file_list.item(0).text()
+        smo2_text = await smo2_file_list.item(0).text()
+        
+        df_fat_raw = pd.read_csv(io.StringIO(fat_text)).apply(pd.to_numeric, errors='coerce').dropna(how='all')
+        df_smo2_raw = pd.read_csv(io.StringIO(smo2_text)).apply(pd.to_numeric, errors='coerce').dropna(how='all')
+        
+        time_col = df_fat_raw.columns[0]
+        subjects = [c for c in df_fat_raw.columns if c != time_col and c in df_smo2_raw.columns]
+        
+        start_speed = float(js.document.getElementById("start_speed").value)
+        increment = float(js.document.getElementById("increment").value)
+        duration = float(js.document.getElementById("stage_duration").value)
+        
+        df_fat_clean, fat_outliers_cnt, df_fat_outliers = advanced_artifact_filter(df_fat_raw, time_col, duration, metric_type='fat')
+        df_smo2_clean, smo2_outliers_cnt, df_smo2_outliers = advanced_artifact_filter(df_smo2_raw, time_col, duration, metric_type='smo2')
+        
+        results = []
+        plot_html = ""
+        valid_group_models = []
+        
+        for subj in subjects:
+            fat_data = df_fat_clean[[time_col, subj]].dropna()
+            smo2_data = df_smo2_clean[[time_col, subj]].dropna()
+            
+            if len(fat_data) < 5 or len(smo2_data) < 5: continue
+            
+            t_fat_raw = fat_data[time_col].values
+            y_fat_raw = fat_data[subj].values
+            t_smo2_raw = smo2_data[time_col].values
+            y_smo2_raw = smo2_data[subj].values
+            
+            fat_outlier_data = df_fat_outliers[[time_col, subj]].dropna()
+            t_fat_out = fat_outlier_data[time_col].values
+            y_fat_out = fat_outlier_data[subj].values
+            
+            smo2_outlier_data = df_smo2_outliers[[time_col, subj]].dropna()
+            t_smo2_out = smo2_outlier_data[time_col].values
+            y_smo2_out = smo2_outlier_data[subj].values
+            
+            y_fat_smooth = smooth_curve_5s(t_fat_raw, y_fat_raw)
+            y_smo2_smooth = smooth_curve_5s(t_smo2_raw, y_smo2_raw)
+            
+            fat_stage_t = []
+            fat_stage_y = []
+            max_t_fat = np.max(t_fat_raw)
+            num_stages = int(np.ceil(max_t_fat / duration))
+            
+            for i in range(num_stages):
+                t_start = i * duration
+                t_end = (i + 1) * duration
+                
+                stage_mask = (t_fat_raw >= t_start) & (t_fat_raw <= t_end)
+                if np.sum(stage_mask) > 0:
+                    stage_t = t_fat_raw[stage_mask]
+                    stage_y = y_fat_smooth[stage_mask]
+                    
+                    actual_end = np.max(stage_t)
+                    last60_mask = stage_t >= (actual_end - 60)
+                    
+                    fat_stage_t.append(actual_end)
+                    fat_stage_y.append(np.nanmean(stage_y[last60_mask]))
+            
+            fat_stage_t = np.array(fat_stage_t)
+            fat_stage_y = np.array(fat_stage_y)
+            
+            fat_drops = fat_outliers_cnt.get(subj, 0)
+            smo2_drops = smo2_outliers_cnt.get(subj, 0)
+            
+            # --- A. 2-PASS ITERATIVE ROBUST FATox MODELING ---
+            poly_deg_fat = min(2, len(fat_stage_t) - 1)
+            if poly_deg_fat < 1: poly_deg_fat = 1
+            
+            p_fat_pre = robust_polyfit_sm(fat_stage_t, fat_stage_y, poly_deg_fat)
+            y_pred_pre = np.poly1d(p_fat_pre)(fat_stage_t)
+            
+            resids = np.abs(fat_stage_y - y_pred_pre)
+            mae = np.median(resids)
+            
+            cutoff = max(0.05, 3.0 * mae)
+            valid_stage_mask = resids <= cutoff
+            
+            if np.sum(valid_stage_mask) < poly_deg_fat + 1:
+                valid_stage_mask = np.ones_like(fat_stage_t, dtype=bool)
+                
+            fat_stage_t_clean = fat_stage_t[valid_stage_mask]
+            fat_stage_y_clean = fat_stage_y[valid_stage_mask]
+            
+            fat_stage_t_rejected = fat_stage_t[~valid_stage_mask]
+            fat_stage_y_rejected = fat_stage_y[~valid_stage_mask]
+
+            p_fat = robust_polyfit_sm(fat_stage_t_clean, fat_stage_y_clean, poly_deg_fat)
+            poly_fat = np.poly1d(p_fat)
+            
+            y_fat_pred_clean = poly_fat(fat_stage_t_clean)
+            fat_adj_r2, fat_aic, fat_runs_p = compute_fit_metrics(fat_stage_y_clean, y_fat_pred_clean, k_params=poly_deg_fat+1)
+            
+            t_dense_fat = np.linspace(min(t_fat_raw), max(t_fat_raw), 500)
+            fat_dense = poly_fat(t_dense_fat)
+            def make_poly_func_fat(poly): return lambda x: poly(x)
+            fat_model_func = make_poly_func_fat(poly_fat)
+            
+            # --- B. ROBUST TIME-BASED SmO2 Modeling (3rd-Degree) ---
+            p_smo2 = robust_polyfit_sm(t_smo2_raw, y_smo2_smooth, 3)
+            poly_smo2 = np.poly1d(p_smo2)
+            y_smo2_pred = poly_smo2(t_smo2_raw)
+            
+            t_dense_smo2 = np.linspace(min(t_smo2_raw), max(t_smo2_raw), 500)
+            smo2_dense = poly_smo2(t_dense_smo2)
+            
+            smo2_adj_r2, smo2_aic, smo2_runs_p = compute_fit_metrics(y_smo2_smooth, y_smo2_pred, k_params=4)
+            
+            # Extract Peak and Nadir from the Robust Model
+            smo2_peak_mod = np.max(smo2_dense)
+            smo2_nadir_mod = np.min(smo2_dense)
+            
+            # --- C. VALIDATION GATE ---
+            poor_fit = (fat_adj_r2 < 0.65) or (smo2_adj_r2 < 0.65)
+            
+            # --- D. METRICS EXTRACTION ---
+            if not poor_fit:
+                fatmax_idx = np.argmax(fat_dense)
+                fatmax_t = t_dense_fat[fatmax_idx]
+                
+                post_max_mask = t_dense_fat >= fatmax_t
+                if post_max_mask.any():
+                    fatmin_idx = np.argmin(fat_dense[post_max_mask]) + np.argmax(post_max_mask)
+                    fatmin_t = t_dense_fat[fatmin_idx]
+                else:
+                    fatmin_t = fatmax_t
+                
+                mfo_modeled = fat_dense[fatmax_idx]
+                
+                zone_mask = fat_dense >= (0.90 * mfo_modeled)
+                zone_t_vals = t_dense_fat[zone_mask]
+                if len(zone_t_vals) > 0:
+                    z_start_t, z_end_t = zone_t_vals[0], zone_t_vals[-1]
+                else:
+                    z_start_t, z_end_t = np.nan, np.nan
+                    
+                fatmax_s = time_to_speed(fatmax_t, start_speed, increment, duration)
+                fatmin_s = time_to_speed(fatmin_t, start_speed, increment, duration)
+                z_start_s = time_to_speed(z_start_t, start_speed, increment, duration)
+                z_end_s = time_to_speed(z_end_t, start_speed, increment, duration)
+            else:
+                fatmax_t, fatmin_t, mfo_modeled, z_start_t, z_end_t = [np.nan]*5
+                fatmax_s, fatmin_s, z_start_s, z_end_s = [np.nan]*4
+
+            # --- E. Curve-to-Curve Segmented Linear Regression Threshold Engine ---
+            popt_seg = None
+            try:
+                x1_guess = np.percentile(t_dense_smo2, 33)
+                x2_guess = np.percentile(t_dense_smo2, 66)
+                y0_guess = smo2_dense[0]
+                
+                popt, _ = curve_fit(piecewise_3seg, t_dense_smo2, smo2_dense, 
+                                    p0=[x1_guess, x2_guess, y0_guess, 0, -0.1, 0],
+                                    bounds=([t_dense_smo2.min(), t_dense_smo2.min(), -np.inf, -np.inf, -np.inf, -np.inf],
+                                            [t_dense_smo2.max(), t_dense_smo2.max(), np.inf, np.inf, np.inf, np.inf]),
+                                    maxfev=10000)
+                popt_seg = popt
+                t_breaks = sorted([popt[0], popt[1]])
+                th1_t, th2_t = t_breaks[0], t_breaks[1]
+                th1_s = time_to_speed(th1_t, start_speed, increment, duration)
+                th2_s = time_to_speed(th2_t, start_speed, increment, duration)
+            except:
+                th1_t, th2_t, th1_s, th2_s = np.nan, np.nan, np.nan, np.nan
+
+            t_min_common = max(t_fat_raw.min(), t_smo2_raw.min())
+            t_max_common = min(t_fat_raw.max(), t_smo2_raw.max())
+            
+            # UPGRADE: 500 perfectly matched points for Causality matrices
+            t_common_dense = np.linspace(t_min_common, t_max_common, 500)
+            fat_interp = fat_model_func(t_common_dense)
+            smo2_interp = poly_smo2(t_common_dense)
+            
+            f_skew, f_kurt = skew(fat_interp), kurtosis(fat_interp)
+            s_skew, s_kurt = skew(smo2_interp), kurtosis(smo2_interp)
+            
+            try:
+                cross_corr, _ = pearsonr(fat_interp, smo2_interp)
+            except:
+                cross_corr = np.nan
+                
+            try:
+                gc_data = np.column_stack((fat_interp, smo2_interp))
+                gc_res = grangercausalitytests(gc_data, maxlag=[1], verbose=False)
+                granger_p = gc_res[1][0]['ssr_ftest'][1]
+            except:
+                granger_p = np.nan
+
+            fat_stage_drops = len(fat_stage_t_rejected)
+            total_fat_drops = f"{fat_drops} (Raw) | {fat_stage_drops} (Stg)"
+
+            results.append({
+                "Subject": f"⚠️ {subj}" if poor_fit else subj,
+                "Status": "POOR FIT" if poor_fit else "Valid",
+                "FAT Outliers": total_fat_drops,
+                "SmO2 Outliers": f"{smo2_drops}",
+                "FAT R²": f"{fat_adj_r2:.2f}",
+                "SmO2 R²": f"{smo2_adj_r2:.2f}",
+                "FAT Runs(p)": f"{fat_runs_p:.3f}",
+                "SmO2 Runs(p)": f"{smo2_runs_p:.3f}",
+                "FAT Skew": f"{f_skew:.2f}",
+                "FAT Kurt": f"{f_kurt:.2f}",
+                "SmO2 Skew": f"{s_skew:.2f}",
+                "SmO2 Kurt": f"{s_kurt:.2f}",
+                "Sync(r)": f"{cross_corr:.3f}",
+                "Granger(p)": f"{granger_p:.3f}",
+                "MFO Mod": f"{mfo_modeled:.2f}" if not poor_fit else "N/A",
+                "FATmax(Load)": f"{fatmax_s:.2f}" if not poor_fit else "N/A",
+                "FATmin(Load)": f"{fatmin_s:.2f}" if not poor_fit else "N/A",
+                "SmO2 Peak (%)": f"{smo2_peak_mod:.1f}" if not poor_fit else "N/A",
+                "SmO2 Nadir (%)": f"{smo2_nadir_mod:.1f}" if not poor_fit else "N/A",
+                "Th1(Load)": f"{th1_s:.2f}" if not np.isnan(th1_s) else "N/A",
+                "Th2(Load)": f"{th2_s:.2f}" if not np.isnan(th2_s) else "N/A",
+                "POOR_FIT_FLAG": poor_fit 
+            })
+            
+            if not poor_fit:
+                if not group_subjs_list or subj in group_subjs_list:
+                    valid_group_models.append({
+                        'fat_func': fat_model_func, 
+                        'poly_smo2': poly_smo2,
+                        'max_t': max(t_fat_raw)
+                    })
+            
+            # --- INDIVIDUAL PLOTS ---
+            fig, ax1 = plt.subplots(figsize=(8, 4))
+            
+            if poor_fit:
+                ax1.text(0.5, 0.5, 'POOR FIT DETECTED', 
+                         horizontalalignment='center', verticalalignment='center',
+                         transform=ax1.transAxes, fontsize=18, color='red', alpha=0.3, fontweight='bold')
+            
+            color = '#d63384'
+            ax1.set_xlabel('Time (s)', fontweight='bold')
+            ax1.set_ylabel('Fat Oxidation (g/min)', color=color, fontweight='bold')
+            
+            if not poor_fit and not np.isnan(z_start_t) and not np.isnan(z_end_t):
+                 ax1.axvspan(z_start_t, z_end_t, color=color, alpha=0.1, label="FATmax Zone")
+                
+            if not hide_raw:
+                ax1.scatter(t_fat_raw, y_fat_smooth, color=color, alpha=0.2, s=20, label="Hampel Filtered Raw")
+                if len(t_fat_out) > 0:
+                    ax1.scatter(t_fat_out, y_fat_out, color='red', marker='x', s=70, zorder=10, label=f"FAT Breath Outliers ({fat_drops})")
+                
+                ax1.scatter(fat_stage_t_clean, fat_stage_y_clean, color='gold', edgecolor='black', s=80, zorder=12, label="Valid Stage Avg")
+                
+                if len(fat_stage_t_rejected) > 0:
+                    ax1.scatter(fat_stage_t_rejected, fat_stage_y_rejected, color='grey', marker='X', edgecolor='black', s=100, zorder=12, label="Pruned Stage Avg")
+                
+            ax1.plot(t_dense_fat, fat_dense, color=color, linewidth=3, zorder=11, label="Robust Poly-2 FATox")
+            
+            if not poor_fit:
+                ax1.axvline(fatmax_t, color=color, linestyle='--', alpha=0.8, linewidth=2)
+                ax1.axvline(fatmin_t, color=color, linestyle=':', alpha=0.8, linewidth=2)
+            ax1.tick_params(axis='y', labelcolor=color)
+            
+            ax2 = ax1.twinx()  
+            color2 = '#0dcaf0'
+            ax2.set_ylabel('SmO2 (%)', color=color2, fontweight='bold')
+            
+            if not hide_raw:
+                ax2.scatter(t_smo2_raw, y_smo2_smooth, color=color2, alpha=0.4, s=40, marker='s', label="Hampel Filtered + 5s Smooth")
+                if len(t_smo2_out) > 0:
+                    ax2.scatter(t_smo2_out, y_smo2_out, color='darkorange', marker='X', s=70, zorder=10, label=f"SmO2 Outliers ({smo2_drops})")
+                
+            if popt_seg is not None:
+                smo2_seg_curve = piecewise_3seg(t_dense_smo2, *popt_seg)
+                ax2.plot(t_dense_smo2, smo2_seg_curve, color='navy', linestyle='-', linewidth=2.5, alpha=0.8, zorder=10, label="3-Seg SmO2 Model")
+
+            ax2.plot(t_dense_smo2, smo2_dense, color=color2, linewidth=3, zorder=11, label="Robust Poly-3 SmO2")
+            
+            if not np.isnan(th1_t): ax2.axvline(th1_t, color='blue', linestyle='-.', linewidth=2, label=f"Th1")
+            if not np.isnan(th2_t): ax2.axvline(th2_t, color='midnightblue', linestyle='-.', linewidth=2, label=f"Th2")
+                
+            ax2.tick_params(axis='y', labelcolor=color2)
+            
+            lines_1, labels_1 = ax1.get_legend_handles_labels()
+            lines_2, labels_2 = ax2.get_legend_handles_labels()
+            ax1.legend(lines_1 + lines_2, labels_1 + labels_2, loc='upper left', bbox_to_anchor=(1.15, 1), fontsize='small')
+            
+            plt.title(f"Subject: {subj}", fontweight='bold')
+            fig.tight_layout()
+            
+            buf = io.BytesIO()
+            plt.savefig(buf, format='png', dpi=100)
+            buf.seek(0)
+            img_str = base64.b64encode(buf.read()).decode('utf-8')
+            plt.close(fig)
+            
+            border_style = "border: 3px solid red;" if poor_fit else ""
+            plot_html += f"<div class='plot-card' style='{border_style}'><img src='data:image/png;base64,{img_str}'></div>"
+
+        # --- GROUP PLOT (Load-Based) ---
+        group_plot_html = ""
+        if len(valid_group_models) > 0:
+            max_global_s = max([time_to_speed(m['max_t'], start_speed, increment, duration) for m in valid_group_models])
+            global_s = np.linspace(start_speed, max_global_s, 500)
+            
+            group_fat = []
+            group_smo2 = []
+            
+            for m in valid_group_models:
+                eval_t = speed_to_time(global_s, start_speed, increment, duration)
+                
+                f_curve = m['fat_func'](eval_t)
+                s_curve = m['poly_smo2'](eval_t)
+                
+                f_curve[eval_t > m['max_t']] = np.nan
+                s_curve[eval_t > m['max_t']] = np.nan
+                
+                group_fat.append(f_curve)
+                group_smo2.append(s_curve)
+                
+            mean_fat = np.nanmean(group_fat, axis=0)
+            std_fat = np.nanstd(group_fat, axis=0)
+            mean_smo2 = np.nanmean(group_smo2, axis=0)
+            std_smo2 = np.nanstd(group_smo2, axis=0)
+            
+            fig_grp, ax_g1 = plt.subplots(figsize=(10, 5))
+            ax_g1.set_xlabel('Load (Speed / Watts)', fontweight='bold')
+            ax_g1.set_ylabel('Fat oxidation (g/min)', color='#d63384', fontweight='bold')
+            ax_g1.plot(global_s, mean_fat, color='#d63384', linewidth=4, label=f"Cohort Mean FATox (n={len(valid_group_models)})")
+            ax_g1.fill_between(global_s, mean_fat - std_fat, mean_fat + std_fat, color='#d63384', alpha=0.15)
+            ax_g1.tick_params(axis='y', labelcolor='#d63384')
+            
+            ax_g2 = ax_g1.twinx()
+            ax_g2.set_ylabel('SmO2 (%)', color='#0dcaf0', fontweight='bold')
+            ax_g2.plot(global_s, mean_smo2, color='#0dcaf0', linewidth=4, label=f"Cohort Mean SmO2")
+            ax_g2.fill_between(global_s, mean_smo2 - std_smo2, mean_smo2 + std_smo2, color='#0dcaf0', alpha=0.15)
+            ax_g2.tick_params(axis='y', labelcolor='#0dcaf0')
+            
+            plt.title(f"Cohort Aggregate Kinetics (n={len(valid_group_models)})", fontweight='bold', fontsize=14)
+            fig_grp.tight_layout()
+            
+            buf_grp = io.BytesIO()
+            plt.savefig(buf_grp, format='png', dpi=150)
+            buf_grp.seek(0)
+            img_grp_str = base64.b64encode(buf_grp.read()).decode('utf-8')
+            plt.close(fig_grp)
+            
+            group_plot_html = f"<div class='text-center'><img src='data:image/png;base64,{img_grp_str}' style='max-width:100%; border-radius:8px;'></div>"
+        
+        # Render Table
+        res_df = pd.DataFrame(results)
+        
+        csv_str = res_df.to_csv(index=False)
+        b64_csv = base64.b64encode(csv_str.encode('utf-8')).decode('utf-8')
+        btn_csv = js.document.getElementById("btn_csv_export")
+        btn_csv.href = f"data:text/csv;base64,{b64_csv}"
+        btn_csv.download = "OxyFat_Robust_Results.csv"
+        btn_csv.style.display = "inline-block"
+        
+        display_cols = [c for c in res_df.columns if c != 'POOR_FIT_FLAG']
+        table_html = "<thead><tr>"
+        for col in display_cols:
+            table_html += f"<th>{col}</th>"
+        table_html += "</tr></thead><tbody>"
+        
+        for _, row in res_df.iterrows():
+            row_class = " class='poor-fit-row'" if row['POOR_FIT_FLAG'] else ""
+            table_html += f"<tr{row_class}>"
+            for col in display_cols:
+                val = row[col]
+                if str(val) == "N/A":
+                    table_html += f"<td style='color:lightgrey;'>{val}</td>"
+                else:
+                    table_html += f"<td>{val}</td>"
+            table_html += "</tr>"
+        table_html += "</tbody>"
+        
+        js.document.getElementById("results_table").innerHTML = table_html
+        js.document.getElementById("group_plot_container").innerHTML = group_plot_html
+        js.document.getElementById("plots_container").innerHTML = plot_html
+        
+        js.document.getElementById("loader").style.display = "none"
+        js.document.getElementById("results_container").style.display = "block"
+        
+    except Exception as e:
+        js.document.getElementById("loader").style.display = "none"
+        js.alert(f"An error occurred during processing: {str(e)}")
+
+js.document.getElementById("btn_run").addEventListener("click", create_proxy(run_analysis))
+</script>
+
+</body>
+</html>
